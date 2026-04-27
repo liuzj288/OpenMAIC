@@ -218,6 +218,38 @@ docker compose up --build
 
 Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
 
+### Optional: VoxCPM2 (Self-Hosted TTS with Voice Cloning)
+
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) is an open-source TTS model from OpenBMB with voice cloning. OpenMAIC ships an adapter; run VoxCPM on your own hardware and OpenMAIC will talk to it.
+
+**1. Run a VoxCPM backend.** Three deployment styles, all behind the same OpenMAIC adapter. You toggle which one in Settings.
+
+| Backend | Endpoint | When to use |
+| --- | --- | --- |
+| **vLLM-Omni** | `/v1/audio/speech` | OpenAI-compatible speech endpoint, ideal for GPU servers |
+| **Python API** | `/tts/upload` | Official VoxCPM Python runtime via FastAPI |
+| **Nano-vLLM** | `/generate` | Lightweight Nano-vLLM FastAPI deployment |
+
+See the [VoxCPM repo](https://github.com/OpenBMB/VoxCPM) for backend setup.
+
+**2. Point OpenMAIC at it.** Open Settings → **Text-to-Speech** → **VoxCPM2**, pick the backend, and paste your Base URL. The Request URL preview confirms OpenMAIC will hit the right endpoint.
+
+<img src="assets/voxcpm/voxcpm-connection.png" width="85%" alt="VoxCPM2 connection settings: backend selector, Base URL, model" />
+
+Or pre-configure it via env var (no API key required):
+
+```env
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+**3. Manage voices.** Three voice modes, all under **Settings → Text-to-Speech → VoxCPM2 → VoxCPM Voices**.
+
+<img src="assets/voxcpm/voxcpm-voice-manager.png" width="85%" alt="VoxCPM2 VoxCPM Voices section with Auto, Prompt and Clone modes" />
+
+- **Auto Voice** (default): OpenMAIC generates a voice prompt from each agent's persona at synthesis time. No setup required.
+- **Prompt voice**: describe the voice in natural language, e.g. *"warm female teacher voice, calm and encouraging, mid-pitch"*.
+- **Clone voice**: upload a short reference audio clip or record one in the browser. The clip is stored in IndexedDB and sent to your VoxCPM backend on each synthesis.
+
 ---
 
 ## ✨ Features
