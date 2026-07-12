@@ -15,7 +15,7 @@ import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { formatImageDescription, formatImagePlaceholder } from './prompt-formatters';
 import { parseJsonResponse } from './json-repair';
 import { uniquifyMediaElementIds } from './scene-builder';
-import type { AICallFn, GenerationResult, GenerationCallbacks } from './pipeline-types';
+import type { AICallFn, GenerationResult } from './pipeline-types';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
 
@@ -37,7 +37,6 @@ export async function generateSceneOutlinesFromRequirements(
   pdfText: string | undefined,
   pdfImages: PdfImage[] | undefined,
   aiCall: AICallFn,
-  callbacks?: GenerationCallbacks,
   options?: {
     visionEnabled?: boolean;
     imageMapping?: ImageMapping;
@@ -46,7 +45,9 @@ export async function generateSceneOutlinesFromRequirements(
     researchContext?: string;
     teacherContext?: string;
   },
-): Promise<GenerationResult<{ languageDirective: string; outlines: SceneOutline[] }>> {
+): Promise<
+  GenerationResult<{ languageDirective: string; courseTitle?: string; outlines: SceneOutline[] }>
+> {
   // Build available images description for the prompt
   let availableImagesText = 'No images available';
   let visionImages: Array<{ id: string; src: string }> | undefined;
@@ -110,21 +111,13 @@ export async function generateSceneOutlinesFromRequirements(
   }
 
   try {
-    callbacks?.onProgress?.({
-      currentStage: 1,
-      overallProgress: 20,
-      stageProgress: 50,
-      statusMessage: '正在分析需求，生成场景大纲...',
-      scenesGenerated: 0,
-      totalScenes: 0,
-    });
-
     const response = await aiCall(prompts.system, prompts.user, visionImages);
     const parsed = parseJsonResponse<
-      { languageDirective: string; outlines: SceneOutline[] } | SceneOutline[]
+      { languageDirective: string; courseTitle?: string; outlines: SceneOutline[] } | SceneOutline[]
     >(response);
 
     let languageDirective: string;
+    let courseTitle: string | undefined;
     let rawOutlines: SceneOutline[];
 
     if (Array.isArray(parsed)) {
@@ -133,6 +126,12 @@ export async function generateSceneOutlinesFromRequirements(
       rawOutlines = parsed;
     } else if (parsed && parsed.outlines) {
       languageDirective = parsed.languageDirective || DEFAULT_LANGUAGE_DIRECTIVE;
+      // courseTitle is optional — only honor a non-empty string, and cap its
+      // length defensively (the prompt asks for ≤30 chars, but older/hallucinating
+      // models may return far more). The downstream Stage.name column is bounded too.
+      const rawTitle = parsed.courseTitle;
+      courseTitle =
+        typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim().slice(0, 120) : undefined;
       rawOutlines = parsed.outlines;
     } else {
       return { success: false, error: 'Failed to parse scene outlines response' };
@@ -152,16 +151,7 @@ export async function generateSceneOutlinesFromRequirements(
     // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
     const result = uniquifyMediaElementIds(enriched);
 
-    callbacks?.onProgress?.({
-      currentStage: 1,
-      overallProgress: 50,
-      stageProgress: 100,
-      statusMessage: `已生成 ${result.length} 个场景大纲`,
-      scenesGenerated: 0,
-      totalScenes: result.length,
-    });
-
-    return { success: true, data: { languageDirective, outlines: result } };
+    return { success: true, data: { languageDirective, courseTitle, outlines: result } };
   } catch (error) {
     return { success: false, error: String(error) };
   }

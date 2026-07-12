@@ -37,6 +37,7 @@ import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
+import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import type { UserRequirements } from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
@@ -49,8 +50,8 @@ import {
   getFirstSlideByStages,
   revokeThumbnailSlideMediaUrls,
 } from '@/lib/utils/stage-storage';
-import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
-import type { Slide } from '@/lib/types/slides';
+import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
+import type { Slide } from '@openmaic/dsl';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -59,6 +60,7 @@ import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
 import { shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
+import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 
 const log = createLogger('Home');
 
@@ -307,12 +309,17 @@ function HomePage() {
 
       let pdfStorageKey: string | undefined;
       let pdfFileName: string | undefined;
+      let documentMimeType: string | undefined;
       let pdfProviderId: string | undefined;
       let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
 
       if (form.pdfFile) {
         pdfStorageKey = await storePdfBlob(form.pdfFile);
         pdfFileName = form.pdfFile.name;
+        documentMimeType = normalizeDocumentMimeType({
+          mimeType: form.pdfFile.type,
+          fileName: form.pdfFile.name,
+        });
 
         const settings = useSettingsStore.getState();
         pdfProviderId = settings.pdfProviderId;
@@ -333,6 +340,7 @@ function HomePage() {
         imageStorageIds: [],
         pdfStorageKey,
         pdfFileName,
+        documentMimeType,
         pdfProviderId,
         pdfProviderConfig,
         sceneOutlines: null,
@@ -570,28 +578,11 @@ function HomePage() {
               {/* Interactive mode toggle */}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                    onClick={() => updateForm('interactiveMode', !form.interactiveMode)}
-                    className={cn(
-                      'relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border shrink-0 h-8',
-                      form.interactiveMode
-                        ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-500 shadow-[0_0_12px_rgba(6,182,212,0.35)] dark:shadow-[0_0_12px_rgba(6,182,212,0.25)]'
-                        : 'border-cyan-300/60 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20',
-                    )}
-                  >
-                    {form.interactiveMode && (
-                      <span
-                        className="absolute inset-[-4px] rounded-full border border-cyan-400/40 dark:border-cyan-400/25"
-                        style={{
-                          animation: 'interactive-mode-breathe 2s ease-in-out infinite',
-                        }}
-                      />
-                    )}
-                    <Atom className="size-3.5 relative z-10 animate-[spin_3s_linear_infinite]" />
-                    <span className="relative z-10">{t('toolbar.interactiveModeLabel')}</span>
-                  </motion.button>
+                  <InteractiveModeButton
+                    pressed={form.interactiveMode}
+                    label={t('toolbar.interactiveModeLabel')}
+                    onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
+                  />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
                   {t('toolbar.interactiveModeHint')}
@@ -1262,7 +1253,7 @@ function ClassroomCard({
         className="relative w-full aspect-[16/9] rounded-2xl bg-slate-100 dark:bg-slate-800/80 overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]"
       >
         {slide && thumbWidth > 0 ? (
-          <ThumbnailSlide
+          <SlideThumbnail
             slide={slide}
             size={thumbWidth}
             viewportSize={slide.viewportSize ?? 1000}
