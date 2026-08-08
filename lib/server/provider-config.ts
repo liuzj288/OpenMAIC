@@ -21,6 +21,10 @@ interface ServerProviderEntry {
   baseUrl?: string;
   models?: string[];
   proxy?: string;
+  /** Aliyun AccessKey ID (AliDocMind — uses AK/SK instead of a single apiKey). */
+  accessKeyId?: string;
+  /** Aliyun AccessKey Secret (AliDocMind). */
+  accessKeySecret?: string;
   /**
    * Admin/operator force-off switch. `false` disables the provider for ALL
    * clients regardless of the user's per-provider toggle (server precedence).
@@ -47,6 +51,8 @@ interface ServerConfig {
 
 const LLM_ENV_MAP: Record<string, string> = {
   OPENAI: 'openai',
+  AZURE_OPENAI: 'azure',
+  ATLASCLOUD: 'atlascloud',
   ANTHROPIC: 'anthropic',
   GOOGLE: 'google',
   DEEPSEEK: 'deepseek',
@@ -64,6 +70,7 @@ const LLM_ENV_MAP: Record<string, string> = {
   MIMO: 'xiaomi',
   OLLAMA: 'ollama',
   LEMONADE: 'lemonade',
+  BEDROCK: 'bedrock',
 };
 
 const TTS_ENV_MAP: Record<string, string> = {
@@ -92,6 +99,7 @@ const ASR_ENV_MAP: Record<string, string> = {
   ASR_OPENAI: 'openai-whisper',
   ASR_QWEN: 'qwen-asr',
   ASR_AZURE: 'azure-asr',
+  ASR_FUNASR: 'funasr-asr',
   ASR_LEMONADE: 'lemonade-asr',
 };
 
@@ -127,6 +135,7 @@ const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   BRAVE: 'brave',
   BAIDU: 'baidu',
   WEB_SEARCH_MINIMAX: 'minimax',
+  SEARXNG: 'searxng',
 };
 
 // ---------------------------------------------------------------------------
@@ -270,9 +279,69 @@ function collectDisabledTTS(
 
 const DEFAULT_FILENAME = 'server-providers.yml';
 const OPENAI_IMAGE_PROVIDER_ID = 'openai-image';
+const ALIDOCMIND_PROVIDER_ID = 'alidocmind';
+const BEDROCK_PROVIDER_ID = 'bedrock';
 
 /** Cache keyed by YAML filename (empty string = default file). */
 const _configs: Map<string, ServerConfig> = new Map();
+
+/**
+ * AliDocMind is server-configured when AK/SK are provided via env
+ * (ALIDOCMIND_ACCESS_KEY_ID/SECRET) or YAML. It uses AK/SK rather than a single
+ * apiKey, so it needs its own fallback rather than PDF_ENV_MAP's apiKey shape.
+ */
+function applyAliDocMindFallback(
+  pdfConfig: Record<string, ServerProviderEntry>,
+  yamlPdfSection: Record<string, Partial<ServerProviderEntry>> | undefined,
+): Record<string, ServerProviderEntry> {
+  const yamlEntry = yamlPdfSection?.[ALIDOCMIND_PROVIDER_ID];
+  const accessKeyId = process.env.ALIDOCMIND_ACCESS_KEY_ID || yamlEntry?.accessKeyId;
+  const accessKeySecret = process.env.ALIDOCMIND_ACCESS_KEY_SECRET || yamlEntry?.accessKeySecret;
+  if (!accessKeyId || !accessKeySecret) {
+    // AliDocMind can only be server-managed with an AK/SK pair. The generic
+    // loader may have created a bare entry from a YAML `baseUrl` alone — drop
+    // it so the provider stays UNMANAGED (clients supply their own creds)
+    // rather than "managed" with no usable credentials, which would both lock
+    // the provider out and silently discard client-entered AK/SK.
+    delete pdfConfig[ALIDOCMIND_PROVIDER_ID];
+    return pdfConfig;
+  }
+
+  // Merge the AK/SK into any entry the generic env/YAML loader already created.
+  // That loader copies only apiKey/baseUrl/models/proxy — never AK/SK — and a
+  // YAML entry with a `baseUrl` makes it create the entry, so returning early
+  // here would leave a "managed" provider with no usable credentials.
+  const existing = pdfConfig[ALIDOCMIND_PROVIDER_ID];
+  pdfConfig[ALIDOCMIND_PROVIDER_ID] = {
+    apiKey: existing?.apiKey ?? '',
+    accessKeyId,
+    accessKeySecret,
+    baseUrl:
+      existing?.baseUrl || yamlEntry?.baseUrl || process.env.ALIDOCMIND_BASE_URL || undefined,
+    models: existing?.models,
+    proxy: existing?.proxy,
+  };
+  return pdfConfig;
+}
+
+/**
+ * Server-owned AliDocMind AK/SK, if this deployment manages the provider.
+ * Returns undefined when AliDocMind is not server-configured (client must
+ * supply its own credentials).
+ */
+export function resolveManagedAliDocMindCredentials():
+  | { accessKeyId: string; accessKeySecret: string; baseUrl?: string }
+  | undefined {
+  const entry = getConfig().pdf[ALIDOCMIND_PROVIDER_ID];
+  if (entry?.accessKeyId && entry?.accessKeySecret) {
+    return {
+      accessKeyId: entry.accessKeyId,
+      accessKeySecret: entry.accessKeySecret,
+      baseUrl: entry.baseUrl,
+    };
+  }
+  return undefined;
+}
 
 function applyOpenAIImageFallback(
   imageConfig: Record<string, ServerProviderEntry>,
@@ -294,6 +363,48 @@ function applyOpenAIImageFallback(
   return imageConfig;
 }
 
+function splitModels(models: string | undefined): string[] | undefined {
+  const parsed = models
+    ?.split(',')
+    .map((model) => model.trim())
+    .filter(Boolean);
+  return parsed && parsed.length > 0 ? parsed : undefined;
+}
+
+function applyBedrockProviderConfig(
+  providers: Record<string, ServerProviderEntry>,
+  yamlProviders: Record<string, Partial<ServerProviderEntry>> | undefined,
+): Record<string, ServerProviderEntry> {
+  const yamlBedrock = yamlProviders?.[BEDROCK_PROVIDER_ID];
+  const envApiKey = process.env.BEDROCK_API_KEY || undefined;
+  const envBaseUrl = process.env.BEDROCK_BASE_URL || undefined;
+  const envRegion = process.env.BEDROCK_REGION?.trim() || undefined;
+  const envModels = splitModels(process.env.BEDROCK_MODELS);
+  const hasExplicitBedrockEnv =
+    !!envRegion ||
+    !!envModels ||
+    !!envApiKey ||
+    !!envBaseUrl ||
+    !!process.env.AWS_BEARER_TOKEN_BEDROCK;
+  const hasYamlBedrock = Object.prototype.hasOwnProperty.call(
+    yamlProviders ?? {},
+    BEDROCK_PROVIDER_ID,
+  );
+
+  if (!providers[BEDROCK_PROVIDER_ID] && !hasExplicitBedrockEnv && !hasYamlBedrock) {
+    return providers;
+  }
+
+  providers[BEDROCK_PROVIDER_ID] = {
+    apiKey: envApiKey || yamlBedrock?.apiKey || providers[BEDROCK_PROVIDER_ID]?.apiKey || '',
+    baseUrl: envBaseUrl || yamlBedrock?.baseUrl || providers[BEDROCK_PROVIDER_ID]?.baseUrl,
+    models: envModels || yamlBedrock?.models || providers[BEDROCK_PROVIDER_ID]?.models,
+    proxy: yamlBedrock?.proxy || providers[BEDROCK_PROVIDER_ID]?.proxy,
+  };
+
+  return providers;
+}
+
 function buildConfig(yamlData: YamlData): ServerConfig {
   const image = applyOpenAIImageFallback(
     loadEnvSection(IMAGE_ENV_MAP, yamlData.image, {
@@ -301,24 +412,33 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     }),
     yamlData.image,
   );
+  const providers = applyBedrockProviderConfig(
+    loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
+      keylessProviders: new Set(['ollama', 'lemonade', BEDROCK_PROVIDER_ID]),
+    }),
+    yamlData.providers,
+  );
 
   return {
-    providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
-      keylessProviders: new Set(['ollama', 'lemonade']),
-    }),
+    providers,
     tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts, {
       keylessProviders: new Set(['voxcpm-tts', 'lemonade-tts']),
     }),
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr, {
-      keylessProviders: new Set(['lemonade-asr']),
+      keylessProviders: new Set(['funasr-asr', 'lemonade-asr']),
     }),
-    pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
-      requiresBaseUrl: true,
-      baseUrlOptionalProviders: new Set(['mineru-cloud']),
-    }),
+    pdf: applyAliDocMindFallback(
+      loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
+        requiresBaseUrl: true,
+        baseUrlOptionalProviders: new Set(['mineru-cloud']),
+      }),
+      yamlData.pdf,
+    ),
     image,
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
-    webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search']),
+    webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search'], {
+      keylessProviders: new Set(['brave', 'searxng']),
+    }),
     ttsDisabled: collectDisabledTTS(yamlData.tts),
   };
 }

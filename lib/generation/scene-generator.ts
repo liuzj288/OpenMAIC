@@ -7,7 +7,9 @@
 
 import { nanoid } from 'nanoid';
 import katex from 'katex';
+import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import type {
   SceneOutline,
   GeneratedSlideContent,
@@ -24,8 +26,10 @@ import type { PromptId } from '@/lib/prompts/types';
 import type { LanguageModel } from 'ai';
 import { createStageAPI } from '@/lib/api/stage-api';
 import { generatePBLContent } from '@/lib/pbl/generate-pbl';
-import { generatePBLV2Project, PlannerV2Error } from '@/lib/pbl/v2/agents/planner';
+import { callLLM } from '@/lib/ai/llm';
+import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 import { generatePBLV2ProjectSingleCall } from '@/lib/pbl/v2/agents/planner-single-call';
+import { PlannerV2Error } from '@/lib/pbl/v2/agents/planner-core';
 import { projectV2ToLegacyProjectConfig } from '@/lib/pbl/v2/compat';
 import type { PBLPlannerV2Input, PBLProjectV2 } from '@/lib/pbl/v2/types';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
@@ -41,7 +45,7 @@ import {
   formatImagePlaceholder,
 } from './prompt-formatters';
 import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@openmaic/dsl';
-import { normalizeElement } from '@openmaic/dsl';
+import { isWidgetType, normalizeElement } from '@openmaic/dsl';
 import type { QuizQuestion } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import type {
@@ -295,15 +299,6 @@ function isImageIdReference(value: string): boolean {
 }
 
 /**
- * Check if a string looks like a generated image/video ID (e.g., "gen_img_1", "gen_img_xK8f2mQ")
- * These are placeholders for AI-generated media, not PDF-extracted images.
- */
-function isGeneratedImageId(value: string): boolean {
-  if (!value) return false;
-  return /^gen_(img|vid)_[\w-]+$/i.test(value);
-}
-
-/**
  * Resolve image ID references in src field to actual base64 URLs
  *
  * AI generates: { type: "image", src: "img_1", ... }
@@ -340,7 +335,7 @@ function resolveImageIds(
         }
 
         // Generated image reference — keep as placeholder for async backfill
-        if (isGeneratedImageId(src)) {
+        if (isGeneratedMediaPlaceholder(src)) {
           if (generatedMediaMapping && generatedMediaMapping[src]) {
             log.debug(`Resolved generated image ID "${src}" to URL`);
             return { ...el, src: generatedMediaMapping[src] };
@@ -358,7 +353,7 @@ function resolveImageIds(
           return null;
         }
         const src = el.src as string;
-        if (isGeneratedImageId(src)) {
+        if (isGeneratedMediaPlaceholder(src)) {
           if (generatedMediaMapping && generatedMediaMapping[src]) {
             log.debug(`Resolved generated video ID "${src}" to URL`);
             return { ...el, src: generatedMediaMapping[src] };
@@ -392,7 +387,7 @@ function normalizeGeneratedVideoRefs(
       const videoEl = { ...el } as Record<string, unknown>;
       const mediaRef = typeof videoEl.mediaRef === 'string' ? videoEl.mediaRef : undefined;
       const src = typeof videoEl.src === 'string' ? videoEl.src : undefined;
-      const hasGeneratedSrc = !!src && isGeneratedImageId(src);
+      const hasGeneratedSrc = isGeneratedMediaPlaceholder(src);
       const hasDirectSrc = !!src && !hasGeneratedSrc;
 
       if (hasDirectSrc) {
@@ -575,12 +570,13 @@ async function generateSlideContent(
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (assignedImages && assignedImages.length > 0) {
+    const sortedAssignedImages = sortDocumentImagesForVision(assignedImages);
     if (visionEnabled && imageMapping) {
       // Vision mode: split into vision images and text-only
-      const withSrc = assignedImages.filter((img) => imageMapping[img.id]);
+      const withSrc = sortedAssignedImages.filter((img) => imageMapping[img.id]);
       const visionSlice = withSrc.slice(0, MAX_VISION_IMAGES);
       const textOnlySlice = withSrc.slice(MAX_VISION_IMAGES);
-      const noSrcImages = assignedImages.filter((img) => !imageMapping[img.id]);
+      const noSrcImages = sortedAssignedImages.filter((img) => !imageMapping[img.id]);
 
       const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
@@ -595,7 +591,9 @@ async function generateSlideContent(
         height: img.height,
       }));
     } else {
-      assignedImagesText = assignedImages.map((img) => formatImageDescription(img)).join('\n');
+      assignedImagesText = sortedAssignedImages
+        .map((img) => formatImageDescription(img))
+        .join('\n');
     }
   }
 
@@ -944,6 +942,7 @@ async function generatePBLSceneContent(
           generatePBLV2ProjectSingleCall(
             plannerInput,
             languageModel,
+            callLLM,
             { onProgress },
             thinkingConfig,
           ),
@@ -951,7 +950,13 @@ async function generatePBLSceneContent(
       {
         label: 'loop',
         run: () =>
-          generatePBLV2Project(plannerInput, languageModel, { onProgress }, thinkingConfig),
+          generatePBLV2Project(
+            plannerInput,
+            languageModel,
+            callLLM,
+            { onProgress },
+            thinkingConfig,
+          ),
       },
     ];
 
@@ -1084,16 +1089,22 @@ export async function generateWidgetContent(
       };
       break;
 
-    case 'diagram':
+    case 'diagram': {
+      const prescribedNodes = widgetOutline.nodes ?? [];
       promptId = PROMPT_IDS.DIAGRAM_CONTENT;
       variables = {
         title: outline.title,
         diagramType: widgetOutline.diagramType || 'flowchart',
         description: outline.description,
         keyPoints: (outline.keyPoints || []).join('\n'),
+        nodeCount: widgetOutline.nodeCount ?? prescribedNodes.length,
+        prescribedNodes,
+        hasNodeCount: typeof widgetOutline.nodeCount === 'number' && widgetOutline.nodeCount > 0,
+        hasPrescribedNodes: prescribedNodes.length > 0,
         languageDirective: languageDirective || '',
       };
       break;
+    }
 
     case 'code':
       promptId = PROMPT_IDS.CODE_CONTENT;
@@ -1175,7 +1186,7 @@ export async function generateWidgetContent(
   }
 
   // Extract widget config from HTML if present
-  const widgetConfig = extractWidgetConfig(html);
+  const widgetConfig = extractWidgetConfig(html, widgetType);
 
   return {
     html: postProcessInteractiveHtml(html),
@@ -1187,14 +1198,21 @@ export async function generateWidgetContent(
 /**
  * Extract widget config from embedded JSON in HTML
  */
-function extractWidgetConfig(html: string): WidgetConfig | undefined {
+export function extractWidgetConfig(
+  html: string,
+  widgetType: WidgetType,
+): WidgetConfig | undefined {
   const match = html.match(
     /<script type="application\/json" id="widget-config">([\s\S]*?)<\/script>/,
   );
   if (!match) return undefined;
 
   try {
-    return JSON.parse(match[1]);
+    const parsed: unknown = JSON.parse(match[1]);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+
+    const config = parsed as Record<string, unknown>;
+    return (isWidgetType(config.type) ? config : { ...config, type: widgetType }) as WidgetConfig;
   } catch {
     return undefined;
   }

@@ -7,6 +7,8 @@ let yamlOverride: string | null = null;
 
 const ENV_PREFIXES_TO_CLEAR = [
   'OPENAI',
+  'AZURE_OPENAI',
+  'ATLASCLOUD',
   'ANTHROPIC',
   'GOOGLE',
   'DEEPSEEK',
@@ -24,6 +26,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'MIMO',
   'HY3',
   'OLLAMA',
+  'BEDROCK',
   'TTS_OPENAI',
   'TTS_AZURE',
   'TTS_GLM',
@@ -33,6 +36,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'TTS_MINIMAX',
   'ASR_OPENAI',
   'ASR_QWEN',
+  'ASR_FUNASR',
   'PDF_UNPDF',
   'PDF_MINERU',
   'PDF_MINERU_CLOUD',
@@ -61,6 +65,11 @@ function clearProviderEnv() {
   delete process.env.TAVILY_API_KEY;
   delete process.env.BOCHA_API_KEY;
   delete process.env.BOCHA_BASE_URL;
+  delete process.env.ALIDOCMIND_ACCESS_KEY_ID;
+  delete process.env.ALIDOCMIND_ACCESS_KEY_SECRET;
+  delete process.env.ALIDOCMIND_BASE_URL;
+  delete process.env.BEDROCK_REGION;
+  delete process.env.AWS_BEARER_TOKEN_BEDROCK;
 }
 
 vi.mock('fs', async (importOriginal) => {
@@ -124,6 +133,12 @@ describe('provider-config', () => {
       vi.stubEnv('ANTHROPIC_API_KEY', 'sk-anthropic');
       const { resolveApiKey } = await import('@/lib/server/provider-config');
       expect(resolveApiKey('anthropic')).toBe('sk-anthropic');
+    });
+
+    it('resolves Azure OpenAI via its dedicated env prefix', async () => {
+      vi.stubEnv('AZURE_OPENAI_API_KEY', 'azure-key');
+      const { resolveApiKey } = await import('@/lib/server/provider-config');
+      expect(resolveApiKey('azure')).toBe('azure-key');
     });
 
     it('returns empty string for unknown provider with no env var', async () => {
@@ -253,6 +268,32 @@ providers:
       ]);
     });
 
+    it('maps Azure deployment names to the built-in provider', async () => {
+      vi.stubEnv('AZURE_OPENAI_API_KEY', 'azure-key');
+      vi.stubEnv('AZURE_OPENAI_BASE_URL', 'https://test-resource.openai.azure.com/openai');
+      vi.stubEnv('AZURE_OPENAI_MODELS', 'course-gpt-4o,course-gpt-5');
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.azure.models).toEqual(['course-gpt-4o', 'course-gpt-5']);
+    });
+
+    it('maps Atlas Cloud env vars to the built-in OpenAI-compatible provider', async () => {
+      vi.stubEnv('ATLASCLOUD_API_KEY', 'sk-atlas');
+      vi.stubEnv('ATLASCLOUD_BASE_URL', 'https://api.atlascloud.ai/v1');
+      vi.stubEnv('ATLASCLOUD_MODELS', 'qwen/qwen3.5-flash,deepseek-ai/deepseek-v4-pro');
+      const { getServerProviders, resolveBaseUrl } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.atlascloud.models).toEqual([
+        'qwen/qwen3.5-flash',
+        'deepseek-ai/deepseek-v4-pro',
+      ]);
+      expect(resolveBaseUrl('atlascloud')).toBe('https://api.atlascloud.ai/v1');
+      expect((providers.atlascloud as Record<string, unknown>).apiKey).toBeUndefined();
+      expect((providers.atlascloud as Record<string, unknown>).baseUrl).toBeUndefined();
+    });
+
     it('maps Tencent Hunyuan and Xiaomi MiMo env prefixes to provider IDs', async () => {
       vi.stubEnv('TENCENT_HUNYUAN_API_KEY', 'sk-tencent');
       vi.stubEnv('TENCENT_HUNYUAN_MODELS', 'hy3-preview,hunyuan-2.0-instruct-20251111');
@@ -284,6 +325,45 @@ providers:
       const providers = getServerProviders();
 
       expect(providers.openai).toBeUndefined();
+    });
+
+    it('includes Bedrock from env without an API key', async () => {
+      vi.stubEnv('BEDROCK_REGION', 'us-east-1');
+      vi.stubEnv('BEDROCK_MODELS', ' us.anthropic.claude-sonnet-5 , us.anthropic.claude-opus-4-8 ');
+      const { getServerProviders, resolveApiKey, resolveBaseUrl } =
+        await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.bedrock).toEqual({
+        models: ['us.anthropic.claude-sonnet-5', 'us.anthropic.claude-opus-4-8'],
+      });
+      expect(resolveApiKey('bedrock')).toBe('');
+      expect(resolveBaseUrl('bedrock')).toBeUndefined();
+    });
+
+    it('does not enable Bedrock for whitespace-only region and models', async () => {
+      vi.stubEnv('BEDROCK_REGION', '   ');
+      vi.stubEnv('BEDROCK_MODELS', ' , ');
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+
+      expect(getServerProviders().bedrock).toBeUndefined();
+    });
+
+    it('includes Bedrock from YAML with only models configured', async () => {
+      yamlOverride = `
+providers:
+  bedrock:
+    models:
+      - us.anthropic.claude-sonnet-5
+      - us.anthropic.claude-opus-4-8
+`;
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.bedrock.models).toEqual([
+        'us.anthropic.claude-sonnet-5',
+        'us.anthropic.claude-opus-4-8',
+      ]);
     });
   });
 
@@ -514,6 +594,96 @@ pdf:
       const { isServerTTSProviderDisabled } = await import('@/lib/server/provider-config');
       expect(isServerTTSProviderDisabled('openai-tts')).toBe(true);
       expect(isServerTTSProviderDisabled('qwen-tts')).toBe(false);
+    });
+  });
+
+  describe('FunASR server configuration', () => {
+    it('activates the keyless provider from an env base URL', async () => {
+      vi.stubEnv('ASR_FUNASR_BASE_URL', 'http://localhost:8000/v1');
+      const { getServerASRProviders, resolveASRApiKey, resolveASRBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerASRProviders()['funasr-asr']).toEqual({});
+      expect(resolveASRApiKey('funasr-asr')).toBe('');
+      expect(resolveASRBaseUrl('funasr-asr')).toBe('http://localhost:8000/v1');
+    });
+
+    it('activates the keyless provider from YAML and keeps server config authoritative', async () => {
+      yamlOverride = 'asr:\n  funasr-asr:\n    baseUrl: http://funasr.internal:8000/v1\n';
+      const { getServerASRProviders, resolveASRBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerASRProviders()['funasr-asr']).toEqual({});
+      expect(resolveASRBaseUrl('funasr-asr', 'https://client.example.com/v1')).toBe(
+        'http://funasr.internal:8000/v1',
+      );
+    });
+  });
+
+  describe('resolveManagedAliDocMindCredentials (AK/SK)', () => {
+    it('resolves YAML-managed AK/SK with NO ALIDOCMIND_* env vars', async () => {
+      // Regression: verification resolved YAML creds but extraction only had an
+      // env fallback, so a YAML-only deployment verified then failed to extract.
+      yamlOverride =
+        'pdf:\n  alidocmind:\n    accessKeyId: yaml-ak\n    accessKeySecret: yaml-sk\n';
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(true);
+      expect(resolveManagedAliDocMindCredentials()).toEqual({
+        accessKeyId: 'yaml-ak',
+        accessKeySecret: 'yaml-sk',
+        baseUrl: undefined,
+      });
+    });
+
+    it('resolves YAML AK/SK even when the entry also has baseUrl', async () => {
+      // Regression: a YAML entry WITH baseUrl makes the generic loader create a
+      // pdf.alidocmind entry (copying only apiKey/baseUrl/models/proxy, never
+      // AK/SK). The fallback must merge AK/SK into that entry, not skip it.
+      yamlOverride =
+        'pdf:\n  alidocmind:\n' +
+        '    accessKeyId: review-ak\n' +
+        '    accessKeySecret: review-sk\n' +
+        '    baseUrl: https://docmind-api.cn-hangzhou.aliyuncs.com\n';
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(true);
+      expect(resolveManagedAliDocMindCredentials()).toEqual({
+        accessKeyId: 'review-ak',
+        accessKeySecret: 'review-sk',
+        baseUrl: 'https://docmind-api.cn-hangzhou.aliyuncs.com',
+      });
+    });
+
+    it('resolves AK/SK from env vars', async () => {
+      vi.stubEnv('ALIDOCMIND_ACCESS_KEY_ID', 'env-ak');
+      vi.stubEnv('ALIDOCMIND_ACCESS_KEY_SECRET', 'env-sk');
+      const { resolveManagedAliDocMindCredentials } = await import('@/lib/server/provider-config');
+      expect(resolveManagedAliDocMindCredentials()).toMatchObject({
+        accessKeyId: 'env-ak',
+        accessKeySecret: 'env-sk',
+      });
+    });
+
+    it('returns undefined when neither env nor YAML configures AliDocMind', async () => {
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(resolveManagedAliDocMindCredentials()).toBeUndefined();
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(false);
+    });
+
+    it('stays UNMANAGED when YAML sets baseUrl but no AK/SK (no lockout)', async () => {
+      // Regression: a baseUrl-only YAML entry made the generic loader create a
+      // pdf.alidocmind entry → isServerConfigured=true (managed) → but with no
+      // AK/SK the provider was locked out AND client-entered creds were dropped.
+      // With no usable server creds it must stay unmanaged so clients can supply
+      // their own.
+      yamlOverride =
+        'pdf:\n  alidocmind:\n    baseUrl: https://docmind-api.cn-beijing.aliyuncs.com\n';
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(false);
+      expect(resolveManagedAliDocMindCredentials()).toBeUndefined();
     });
   });
 });

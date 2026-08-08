@@ -7,7 +7,10 @@
  */
 export type BuiltInProviderId =
   | 'openai'
+  | 'azure'
+  | 'atlascloud'
   | 'anthropic'
+  | 'bedrock'
   | 'google'
   | 'deepseek'
   | 'qwen'
@@ -32,7 +35,7 @@ export type ProviderId = BuiltInProviderId | `custom-${string}`;
 /**
  * Provider API types
  */
-export type ProviderType = 'openai' | 'anthropic' | 'google';
+export type ProviderType = 'openai' | 'azure' | 'anthropic' | 'bedrock' | 'google';
 
 export type ThinkingControlType =
   | 'none'
@@ -163,6 +166,10 @@ export interface ProviderConfig {
   name: string;
   type: ProviderType;
   defaultBaseUrl?: string;
+  /** Example shown in the Base URL input when no safe default exists. */
+  baseUrlPlaceholder?: string;
+  /** Whether this provider exposes a usable model-discovery endpoint. */
+  supportsModelDiscovery?: boolean;
   /**
    * Known alternate base URLs for this provider (e.g. regional endpoints).
    * Rendered in the settings UI as quick-select chips under the base URL input.

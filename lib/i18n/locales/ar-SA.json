@@ -15,6 +15,8 @@
     "removePdf": "إزالة الملف",
     "documentExtractor": "مستخرج المستندات",
     "courseMaterialUpload": "رفع مادة المقرر",
+    "courseMaterialsSelected": "تم تحديد {{n}} مواد",
+    "courseMaterialMergeOrder": "سيتم دمج المواد بالترتيب المعروض أدناه.",
     "removeCourseMaterial": "إزالة الملف",
     "webSearchOn": "مُفعّل",
     "webSearchOff": "انقر للتفعيل",
@@ -49,7 +51,44 @@
     "exporting": "جارٍ التصدير...",
     "exportSuccess": "تم التصدير بنجاح",
     "exportFailed": "فشل التصدير",
-    "inlinePartial": "تعذّر تضمين {{count}} من الموارد الخارجية؛ قد لا يتم عرض الدورة بشكل صحيح دون اتصال بالإنترنت."
+    "inlinePartial": "تعذّر تضمين {{count}} من الموارد الخارجية؛ قد لا يتم عرض الدورة بشكل صحيح دون اتصال بالإنترنت.",
+    "video": "تصدير الفيديو",
+    "videoDesc": "مشروع Hyperframes مكتفٍ ذاتيًا (يمكن تحويله إلى MP4)",
+    "videoNoScenes": "لا توجد مشاهد متاحة للتصدير.",
+    "videoCompiling": "جارٍ تجميع الخط الزمني للفيديو...",
+    "videoRendering": "جارٍ عرض الشرائح وجمع الموارد...",
+    "videoPackaging": "جارٍ تحزيم مشروع الفيديو...",
+    "videoSuccess": "تم تصدير مشروع الفيديو",
+    "videoFailed": "فشل تصدير الفيديو",
+    "videoWarnings": "{{assets}} من الموارد مفقودة و {{diagnostics}} من المشكلات في تقرير التصدير.",
+    "videoMp4Success": "تم عرض الفيديو",
+    "videoServiceUnavailable": "خدمة العرض غير مُهيأة — تم تنزيل ملف ZIP للمشروع للعرض محليًا.",
+    "videoResolution": "الدقة",
+    "videoFps": "معدل الإطارات",
+    "videoQuality": "الجودة",
+    "videoQuality_draft": "مسودة",
+    "videoQuality_standard": "قياسي",
+    "videoQuality_high": "عالية",
+    "videoProgress": "{{percent}}%",
+    "videoProgressWithEta": "{{percent}}% · يتبقّى ~{{remaining}}",
+    "videoEtaMinSec": "{{min}} د {{sec}} ث",
+    "videoEtaSec": "{{sec}} ث",
+    "videoRenderMp4": "عرض MP4",
+    "videoDownloadZip": "تنزيل ملف ZIP للمشروع",
+    "videoServiceHint": "يتطلب عرض MP4 خدمة العرض. نزّل ملف ZIP للعرض محليًا.",
+    "videoBurnSubtitles": "دمج الترجمة في الفيديو",
+    "videoBurnSubtitlesDesc": "عند الإيقاف: صدّر فيديو نظيفًا وأضف ملف الترجمة في برنامج التحرير لديك.",
+    "videoQuizCtaPrompt": "هل تريد تجربة اختبار تفاعلي؟",
+    "videoPblCtaPrompt": "هل تريد استكشاف التعلم القائم على المشاريع؟",
+    "videoCtaVisit": "تفضل بزيارة",
+    "videoDownloadSubtitles": "تنزيل الترجمة (.srt)",
+    "subtitlesCompiling": "جارٍ تجميع الترجمة...",
+    "subtitlesSuccess": "تم تنزيل الترجمة",
+    "subtitlesEmpty": "لا يوجد سرد لإنشاء الترجمة منه",
+    "subtitlesFailed": "فشل تنزيل الترجمة",
+    "noSlides": "لا توجد شرائح للتصدير",
+    "noSlidesSkipped": "لا توجد شرائح في هذه الدورة — تم تخطي PPTX",
+    "nothingToExport": "لا يوجد محتوى للتصدير"
   },
   "import": {
     "classroom": "استيراد فصل",
@@ -79,6 +118,7 @@
     "unknown": "غير معروف",
     "stopDiscussion": "إيقاف النقاش",
     "endQA": "إنهاء الأسئلة والأجوبة",
+    "softClosing": "متابعة النقاش",
     "error": {
       "emptyAgentResponses": "أعاد الوكلاء استجابات فارغة; توقف النقاش. حاول مرة أخرى أو راجع إعدادات النموذج.",
       "streamInterrupted": "انتهى تدفق البيانات بشكل غير متوقع; لم يكتمل النقاش. يرجى المحاولة مرة أخرى."
@@ -204,8 +244,8 @@
     },
     "insert": {
       "textBox": "مربع نص",
-      "expandToolbar": "إظهار أدوات الإدراج",
-      "collapseToolbar": "إخفاء أدوات الإدراج",
+      "dragToolbar": "نقل أدوات الإدراج",
+      "dragToolbarKeyboard": "نقل أدوات الإدراج: اضغط Enter أو مسافة، ثم استخدم مفاتيح الأسهم",
       "image": "صورة",
       "imageDrop": "أفلِت صورة أو انقر لاختيار ملف",
       "imageOr": "أو الصق رابط صورة",
@@ -263,7 +303,7 @@
       "commentPromptLabel": "إرشادات التصحيح",
       "commentPromptPlaceholder": "كيف ينبغي تقييم هذه الإجابة المفتوحة؟",
       "empty": "لا توجد أسئلة بعد",
-      "emptyHint": "استخدم «إضافة سؤال» أعلاه لإنشاء أول سؤال.",
+      "emptyHint": "استخدم «إضافة سؤال» لإنشاء أول سؤال.",
       "type": {
         "single": "اختيار واحد",
         "multiple": "اختيار متعدد",
@@ -326,6 +366,10 @@
         "fixHtml": {
           "examples": "«زر البدء لا يفعل شيئًا»، «تتداخل اللوحات على الجوال»",
           "label": "إصلاح خطأ في الصفحة"
+        },
+        "elements": {
+          "label": "تعديل العناصر",
+          "examples": "«اجعل العنوان أزرق وحرّكه للأعلى»، «صغّر هذا الشكل»"
         }
       },
       "newConversation": "New conversation",
@@ -341,7 +385,8 @@
         "lead": "صِف خطأً في هذه الصفحة التفاعلية — مثل زر لا يفعل شيئًا — وسأُصلح ذلك فقط مع الإبقاء على كل شيء آخر.",
         "placeholder": "صِف الخطأ في هذه الصفحة التفاعلية…"
       },
-      "thinking": "جارٍ التفكير…"
+      "thinking": "جارٍ التفكير…",
+      "title": "التحرير باستخدام الذكاء الاصطناعي"
     },
     "timeline": {
       "title": "نص السرد",
@@ -426,6 +471,29 @@
       "fixing": "جارٍ الإصلاح",
       "notFixed": "لم يُصلَح",
       "title": "إصلاح الصفحة التفاعلية"
+    },
+    "editElements": {
+      "title": "تحرير العناصر",
+      "editing": "جارٍ التحرير",
+      "applied": "تم التطبيق",
+      "notApplied": "لم يُطبَّق",
+      "applyFailed": "تعذر على المحرر تطبيق تعديل العنصر. لم يتم تغيير أي محتوى.",
+      "applyPartiallyFailed": "تعذر على المحرر تطبيق تعديل واحد أو أكثر للعناصر. ربما تم تطبيق تعديلات أخرى."
+    },
+    "roster": {
+      "title": "تشكيلة الفصل",
+      "count": "{{count}} أعضاء",
+      "editHint": "انقر على عضو للتعديل",
+      "personaLabel": "الشخصية",
+      "personaPlaceholder": "صف شخصية الدور وأسلوب التدريس والمهام...",
+      "noPersona": "لا توجد شخصية بعد",
+      "unnamed": "بلا عنوان",
+      "teacherBadge": "القائد",
+      "moveUp": "نقل لأعلى",
+      "moveDown": "نقل لأسفل",
+      "removeFromClass": "إزالة من الفصل",
+      "aiClassmates": "زملاء AI · {{count}}",
+      "addRole": "إضافة دور"
     }
   },
   "classroomComplete": {
@@ -498,6 +566,7 @@
     "noSpeechDetected": "لم يتم اكتشاف كلام، يرجى المحاولة مرة أخرى",
     "discussionEnded": "انتهى النقاش",
     "qaEnded": "انتهت الأسئلة والأجوبة",
+    "softClosing": "متابعة النقاش",
     "thinking": "يفكر",
     "yourTurn": "دورك",
     "stopDiscussion": "إيقاف النقاش",
@@ -825,12 +894,14 @@
     "requirementPlaceholder": "أخبرني بأي شيء تريد تعلمه، مثلاً:\n\"علمني بايثون من الصفر في 30 دقيقة\"\n\"اشرح تحويل فورييه على السبورة\"\n\"كيف تلعب لعبة أفالون\"",
     "requirementRequired": "يرجى إدخال متطلبات المقرر",
     "fileTooLarge": "الملف كبير جدًا. يرجى اختيار ملف أصغر من 50 ميغابايت",
+    "courseMaterialCountLimit": "يمكنك رفع ما يصل إلى 5 ملفات لمواد المقرر",
+    "courseMaterialTotalSizeLimit": "يجب أن يكون الحجم الإجمالي لمواد المقرر أقل من 150 ميغابايت",
     "unsupportedCourseMaterial": "المستخرج الحالي لا يدعم هذه الصيغة. غيّر المستخرج أو اختر ملفًا آخر."
   },
   "generation": {
     "pdfLoadFailed": "فشل تحميل ملف PDF، يرجى المحاولة مرة أخرى",
     "pdfParseFailed": "فشل تحليل PDF",
-    "analyzingCourseMaterial": "تحليل ملف {{type}}",
+    "analyzingCourseMaterial": "تحليل المستندات",
     "analyzingCourseMaterialDesc": "جارٍ استخراج هيكل المستند ومحتواه...",
     "courseMaterialLoadFailed": "فشل تحميل مادة المقرر، يرجى المحاولة مرة أخرى",
     "courseMaterialParseFailed": "فشل تحليل مادة المقرر",
@@ -935,7 +1006,8 @@
     "webSearchingDesc": "جارٍ البحث في الإنترنت عن معلومات محدّثة",
     "webSearchFailed": "فشل البحث في الإنترنت",
     "outlinesReadyCount": "{{ready}} / {{total}} أقسام جاهزة",
-    "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان"
+    "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان",
+    "analyzingMediaMaterial": "تحليل الصوت/الفيديو"
   },
   "settings": {
     "title": "الإعدادات",
@@ -1016,8 +1088,10 @@
     "addProviderDescription": "أضف مزوّدي نماذج مخصصين لتوسيع نماذج الذكاء الاصطناعي المتاحة",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
+      "bedrock": "Amazon Bedrock",
       "deepseek": "DeepSeek",
       "qwen": "Qwen",
       "kimi": "Kimi",
@@ -1034,12 +1108,15 @@
       "tavily": "Tavily",
       "bocha": "Bocha",
       "brave": "Brave Search",
-      "baidu": "Baidu"
+      "baidu": "Baidu",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "بروتوكول OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "بروتوكول Claude",
-      "google": "بروتوكول Gemini"
+      "google": "بروتوكول Gemini",
+      "bedrock": "Amazon Bedrock"
     },
     "modelCount": "نماذج",
     "modelSingular": "نموذج",
@@ -1056,6 +1133,7 @@
     "importFromClipboard": "استيراد من الحافظة",
     "apiSecret": "مفتاح API",
     "apiHost": "العنوان الأساسي",
+    "azureDeploymentHint": "أدخل نقطة نهاية Azure OpenAI أعلاه، ثم أضف اسم كل عملية نشر في Azure كنموذج.",
     "baseUrlRegion": {
       "china": "الصين",
       "international": "دولي",
@@ -1239,6 +1317,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "التعرّف على الكلام المدمج في المتصفح",
     "providerQwenASR": "Qwen ASR (سحابة علي بابا بايليان)",
+    "providerFunASRASR": "FunASR (محلي)",
     "providerLemonadeASR": "Lemonade ASR (محلي)",
     "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (مُدمج)",
@@ -1557,12 +1636,16 @@
     "clearCacheButton": "حذف جميع البيانات نهائيًا",
     "clearCacheSuccess": "تم مسح الذاكرة المؤقتة، ستتم إعادة تحميل الصفحة قريبًا",
     "clearCacheFailed": "فشل مسح الذاكرة المؤقتة، يرجى المحاولة مرة أخرى",
+    "clearCacheBlockedByOtherTabs": "أغلق علامات تبويب التطبيق الأخرى وأعد المحاولة.",
+    "persistUnavailable": "لا يتم حفظ تغييراتك لأن التطبيق لا يستطيع الوصول إلى بياناته المخزّنة. إذا لم تُجدِ إعادة التحميل نفعًا، فامسح ذاكرة التخزين المؤقت المحلية من الإعدادات.",
+    "persistChangesLost": "عاد التخزين إلى العمل، لكن تعذّر حفظ التغييرات التي أجريتها أثناء تعطّله، وتم استبدالها بآخر نسخة محفوظة.",
     "webSearchSettings": "بحث الإنترنت",
     "webSearchApiKey": "مفتاح API للبحث",
     "webSearchApiKeyPlaceholder": "أدخل مفتاح API للبحث",
     "webSearchApiKeyPlaceholderServer": "تم تكوين مفتاح الخادم، يمكنك التجاوز اختياريًا",
     "webSearchApiKeyHint": "احصل على مفتاح API من مزود البحث المحدد",
     "webSearchApiKeyOptional": "مفتاح API اختياري. بدونه، سيتم استخدام استخراج الصفحة العامة كبديل.",
+    "searxngServerOnlyNotice": "يجب تكوين SearXNG على الخادم. عيّن متغير البيئة SEARXNG_BASE_URL (أو قسم web-search في server-providers.yml). لا يُقبل عناوين URL للمثيلات المقدمة من العميل.",
     "baiduSubSources": "مصادر بحث Baidu",
     "baiduSubSourcesDescription": "اختر مصدر Baidu واحدًا على الأقل.",
     "baiduSubSourceWeb": "بحث الويب",
@@ -1625,7 +1708,9 @@
       "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
     },
-    "ttsBrowserNativeTimelineNotice": "لا يدعم تحويل النص إلى كلام المدمج في المتصفح ميزات الصوت في الخط الزمني للمحرر (المعاينة وإعادة التوليد والتعليق الصوتي الجماعي). بدّل إلى مزود TTS مُدار لتوليد صوت كل سطر وإدارته."
+    "ttsBrowserNativeTimelineNotice": "لا يدعم تحويل النص إلى كلام المدمج في المتصفح ميزات الصوت في الخط الزمني للمحرر (المعاينة وإعادة التوليد والتعليق الصوتي الجماعي). بدّل إلى مزود TTS مُدار لتوليد صوت كل سطر وإدارته.",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "الملف الشخصي",
