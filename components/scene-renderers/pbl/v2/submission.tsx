@@ -59,10 +59,12 @@ import type {
   PBLProjectV2,
   PBLSubmission,
 } from '@/lib/pbl/v2/types';
+import { trimmedPBLText } from '@/lib/pbl/v2/readers';
 import type { PBLSSEEvent } from '@/lib/pbl/v2/api/sse';
 import { applyInstructorEvent } from './apply-instructor-event';
-import { getCurrentModelConfig } from '@/lib/utils/model-config';
-import { useSettingsStore } from '@/lib/store/settings';
+import { PROVIDERS } from '@/lib/ai/providers';
+import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
+import { effectiveTarget } from '@/lib/model-settings/capabilities';
 import { normalizeProjectRuntime } from '@/lib/pbl/v2/operations/kernel/progress';
 import {
   appendRuntimeEvent,
@@ -330,7 +332,7 @@ export function PBLV2SubmissionPanel({
     const beats = milestone.microtasks;
     const brief = beats
       .map((b) => b.learnerBrief || b.description || '')
-      .map((s) => s.trim())
+      .map(trimmedPBLText)
       .filter(Boolean)
       .join('\n\n');
     const hints = beats.flatMap((b) => b.hints ?? []).filter(Boolean);
@@ -436,7 +438,6 @@ export function PBLV2SubmissionPanel({
     });
     let workingProject = structuredClone(snapshot);
     try {
-      const modelConfig = getCurrentModelConfig();
       const runStream = async (
         endpoint: string,
         body: Record<string, unknown>,
@@ -449,13 +450,8 @@ export function PBLV2SubmissionPanel({
           streamStatus,
           draft,
         });
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          'x-model': modelConfig.modelString || '',
-          'x-api-key': modelConfig.apiKey || '',
-        };
-        if (modelConfig.baseUrl) headers['x-base-url'] = modelConfig.baseUrl;
-        if (modelConfig.providerType) headers['x-provider-type'] = modelConfig.providerType;
+        // The server runs the workspace's classroom model.
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         try {
           const stored = localStorage.getItem('locale');
           if (stored) headers['x-user-locale'] = stored;
@@ -872,7 +868,7 @@ function SubmissionViewer({
                 alt={submission.filename || 'submission'}
                 className="mx-auto max-h-[60vh] rounded-lg border border-cyan-100/[0.14] object-contain"
               />
-              {submission.content?.trim() && (
+              {trimmedPBLText(submission.content) && (
                 <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground/90">
                   {submission.content}
                 </pre>
@@ -921,12 +917,17 @@ function SubmissionModal({
   onSubmit,
 }: SubmissionModalProps) {
   const { t } = useI18n();
-  // Whether the currently-selected model can read images. Reactive so that
+  // Whether the model the evaluation runs on (the workspace's classroom slot)
+  // can read images, as far as the model catalogue says. Reactive so that
   // switching models (in Settings) updates the image-caption gating live.
-  const hasVision = useSettingsStore((s) => {
-    const model = findModelById(s.providerId, s.providersConfig[s.providerId]?.models, s.modelId);
-    return !!model?.capabilities?.vision;
-  });
+  const classroomModel = effectiveTarget(useModelSettingsView(), 'classroom');
+  const hasVision =
+    !!classroomModel?.modelId &&
+    !!findModelById(
+      classroomModel.registryId,
+      PROVIDERS[classroomModel.registryId as keyof typeof PROVIDERS]?.models,
+      classroomModel.modelId,
+    )?.capabilities?.vision;
   const [mode, setMode] = useState<'paste' | 'file'>('paste');
   const [text, setText] = useState('');
   const [filename, setFilename] = useState('');
@@ -1053,7 +1054,7 @@ function SubmissionModal({
         if (ac.signal.aborted) return;
         const parsed: string =
           json?.data?.markdown ?? json?.data?.text ?? json?.markdown ?? json?.text ?? '';
-        if (!parsed.trim()) {
+        if (!trimmedPBLText(parsed)) {
           setError(t('pbl.v2.submission.pdfNoText'));
           return;
         }
@@ -1347,7 +1348,7 @@ function SubmissionModal({
                           {new Date(s.createdAt).toLocaleString()}
                         </span>
                       </div>
-                      {(s.content ?? '').trim() && (
+                      {trimmedPBLText(s.content) && (
                         <p className="mt-1 text-muted-foreground/90 line-clamp-2">
                           {(s.content ?? '').slice(0, 200)}
                           {(s.content ?? '').length > 200 ? '…' : ''}

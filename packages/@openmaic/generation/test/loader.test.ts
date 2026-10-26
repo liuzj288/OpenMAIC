@@ -36,6 +36,41 @@ describe('loader semantics', () => {
     expect(result!.user).toContain('Test Slide');
   });
 
+  test('defaults the project summary for the previous pbl-actions variable set', () => {
+    const result = buildPrompt(PROMPT_IDS.PBL_ACTIONS, {
+      title: 'Resilient Systems',
+      projectTopic: 'Retry handling',
+      projectDescription: 'Practice resilient generation',
+      keyPoints: '1. Classify failures',
+      description: 'Build a retry-aware workflow',
+      courseContext: '',
+      agents: '',
+      languageDirective: 'en',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.system).toContain(
+      '(No generated milestones are available; introduce the project topic without inventing any.)',
+    );
+    expect(`${result!.system}\n${result!.user}`).not.toMatch(/\{\{\w[\w-]*\}\}/);
+  });
+
+  test('inlines the TTS readability snippet into every actions prompt', () => {
+    const actionsPromptIds = [
+      PROMPT_IDS.SLIDE_ACTIONS,
+      PROMPT_IDS.QUIZ_ACTIONS,
+      PROMPT_IDS.INTERACTIVE_ACTIONS,
+      PROMPT_IDS.PBL_ACTIONS,
+    ];
+
+    for (const promptId of actionsPromptIds) {
+      const prompt = loadPrompt(promptId);
+      expect(prompt, promptId).not.toBeNull();
+      expect(prompt!.systemPrompt, promptId).toContain('Speech Must Be TTS-Readable');
+      expect(prompt!.systemPrompt, promptId).not.toMatch(/\{\{snippet:/);
+    }
+  });
+
   test('inlines a snippet exactly once', () => {
     const promptsDir = createPromptsFixture();
     writeFileSync(join(promptsDir, 'snippets', 'example.md'), 'inlined content\n');

@@ -1,12 +1,16 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import { loadSnippet } from '@openmaic/generation';
 import type { SnippetId } from '@openmaic/generation';
 
 const PACKAGE_ROOT = fileURLToPath(new URL('../', import.meta.url));
-const APP_PROMPTS_DIR = resolve(PACKAGE_ROOT, '../../..', 'lib', 'prompts');
+const PBL_PROMPT_FILES = [
+  'planner-system.md',
+  'planner-scenario-single-call-system.md',
+  'planner-single-call-system.md',
+] as const;
 
 const PROMPT_IDS = [
   'requirements-to-outlines',
@@ -29,9 +33,13 @@ const SNIPPET_IDS = [
   'image-instructions',
   'video-instructions',
   'media-safety-guidelines',
+  'interactive-math',
+  'interactive-libraries',
+  'interactive-observation',
   'slide-image-instructions',
   'slide-generated-image-instructions',
   'slide-video-instructions',
+  'speech-tts-readability',
 ] as const satisfies readonly SnippetId[];
 
 const GRANDFATHERED_NON_CAMEL_CASE_PLACEHOLDERS = [
@@ -67,17 +75,33 @@ describe('packaged prompt assets', () => {
       ...listFiles(join(PACKAGE_ROOT, 'templates')),
       ...listFiles(join(PACKAGE_ROOT, 'snippets')),
     ]
-      .map((file) => relative(PACKAGE_ROOT, file))
+      .map((file) => relative(PACKAGE_ROOT, file).replace(/\\/g, '/'))
       .sort();
 
     expect(actualFiles).toEqual(expectedFiles);
   });
 
-  test.each(expectedFiles)('%s is byte-identical to the app asset', (assetPath) => {
-    const packageBytes = readFileSync(join(PACKAGE_ROOT, assetPath));
-    const appBytes = readFileSync(join(APP_PROMPTS_DIR, assetPath));
+  test('instructs Pyodide widgets to load micropip before importing it', () => {
+    const source = readFileSync(
+      join(PACKAGE_ROOT, 'templates', 'code-content', 'system.md'),
+      'utf8',
+    );
+    const loadIndex = source.search(
+      /await pyodide\.loadPackage\(\s*(?:['"]micropip['"]|\[[^\]]*['"]micropip['"][^\]]*\])\s*\)/,
+    );
+    const firstImportIndex = source.indexOf('import micropip');
+    const orderedExample =
+      /await pyodide\.loadPackage\(\s*(?:['"]micropip['"]|\[[^\]]*['"]micropip['"][^\]]*\])\s*\);\s*await pyodide\.runPythonAsync\(`\s*import micropip\b/;
 
-    expect(Buffer.compare(packageBytes, appBytes)).toBe(0);
+    expect(loadIndex).toBeGreaterThanOrEqual(0);
+    expect(firstImportIndex).toBeGreaterThan(loadIndex);
+    expect(source).toMatch(orderedExample);
+  });
+
+  test.each(PBL_PROMPT_FILES)('ships prompts-pbl/%s', (filename) => {
+    expect(
+      readFileSync(join(PACKAGE_ROOT, 'prompts-pbl', filename), 'utf8').length,
+    ).toBeGreaterThan(100);
   });
 
   test('every referenced snippet is packaged and represented by SnippetId', () => {

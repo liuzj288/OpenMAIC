@@ -15,6 +15,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
+import type { LegacySpeechAction } from '@/lib/types/action';
 import type {
   Action,
   SpotlightAction,
@@ -53,7 +54,9 @@ import {
   wbClearMs,
 } from '@/lib/choreography';
 import katex from 'katex';
+import { safeKatexOptions } from '@openmaic/dsl';
 import { createLogger } from '@/lib/logger';
+import { legacyShapeCompatibilityError } from '@/lib/whiteboard/legacy-shape';
 
 const log = createLogger('ActionEngine');
 
@@ -152,6 +155,18 @@ export function resolveActionVideoMedia(
   return undefined;
 }
 
+/**
+ * Renderer-aligned playability: a task is playable only once its bytes exist
+ * (`done` + objectUrl). A deferred restore is `done` without an objectUrl and
+ * the renderer still treats it as pending (`resolveMediaRef` maps it to
+ * 'pending'), so starting playback in that state would set
+ * playingVideoElementId while no <video> exists — and the later hydration
+ * would not retrigger play, leaving the action stuck until its timeout.
+ */
+function isPlayableVideoTask(task: MediaTask): boolean {
+  return task.status === 'done' && !!task.objectUrl;
+}
+
 // ==================== ActionEngine ====================
 
 /** Callback for sending messages to widget iframe */
@@ -209,6 +224,11 @@ export class ActionEngine {
       if (action.type.startsWith('widget_')) {
         return;
       }
+    }
+
+    if (action.type === 'wb_draw_shape') {
+      const error = legacyShapeCompatibilityError(action);
+      if (error) throw new Error(error);
     }
 
     // Auto-open whiteboard if a draw/clear/delete action is attempted while it's closed
@@ -325,7 +345,9 @@ export class ActionEngine {
 
     return new Promise<void>((resolve) => {
       this.audioPlayer!.onEnded(() => resolve());
-      this.audioPlayer!.play(action.audioId || '', action.audioUrl)
+      // The legacy URL of an unconverted pair rides along as the fallback of
+      // last resort; converted documents carry no audioUrl.
+      this.audioPlayer!.play(action.audioId || '', (action as LegacySpeechAction).audioUrl)
         .then((audioStarted) => {
           if (!audioStarted) resolve();
         })
@@ -348,10 +370,11 @@ export class ActionEngine {
       );
     const binding = resolveBinding();
 
-    if (binding) {
-      const task = binding.task;
-      if (task && task.status !== 'done') {
-        // Wait for media to be ready (or fail)
+    if (binding?.task) {
+      // Wait while the task is not yet playable: pending/generating, or a
+      // deferred restore that is done but still byte-less.
+      if (!isPlayableVideoTask(binding.task) && binding.task.status !== 'failed') {
+        // Wait for media to be playable (or fail)
         await new Promise<void>((resolve) => {
           let unsubscribe = () => {};
           const finish = () => {
@@ -361,24 +384,24 @@ export class ActionEngine {
           };
           unsubscribe = useMediaGenerationStore.subscribe((state) => {
             const t = resolveActionVideoMedia(this.stageStore, state.tasks, action.elementId)?.task;
-            if (!t || t.status === 'done' || t.status === 'failed') {
+            if (!t || isPlayableVideoTask(t) || t.status === 'failed') {
               finish();
             }
           });
           options.signal?.addEventListener('abort', finish, { once: true });
           // Check again in case it resolved between getState and subscribe
           const current = resolveBinding()?.task;
-          if (!current || current.status === 'done' || current.status === 'failed') {
+          if (!current || isPlayableVideoTask(current) || current.status === 'failed') {
             finish();
           }
         });
 
         if (options.signal?.aborted) return;
+      }
 
-        // If failed, skip playback
-        if (resolveBinding()?.task?.status === 'failed') {
-          return;
-        }
+      // If failed, skip playback
+      if (resolveBinding()?.task?.status === 'failed') {
+        return;
       }
     }
 
@@ -501,7 +524,7 @@ export class ActionEngine {
         id: action.elementId || '',
         type: 'shape',
         viewBox: [1000, 1000] as [number, number],
-        path: SHAPE_PATHS[action.shape] ?? SHAPE_PATHS.rectangle,
+        path: SHAPE_PATHS[action.shape],
         left: action.x,
         top: action.y,
         width: action.width,
@@ -555,11 +578,14 @@ export class ActionEngine {
     if (!wb.success || !wb.data) return;
 
     try {
-      const html = katex.renderToString(action.latex, {
-        throwOnError: false,
-        displayMode: true,
-        output: 'html',
-      });
+      const html = katex.renderToString(
+        action.latex,
+        safeKatexOptions({
+          throwOnError: false,
+          displayMode: true,
+          output: 'html',
+        }),
+      );
 
       this.stageAPI.whiteboard.addElement(
         {
@@ -770,9 +796,9 @@ export class ActionEngine {
       case 'replace_lines': {
         if (!action.lineIds?.length) return;
         const replaceIds = action.lineIds;
-        const firstIdx = lines.findIndex((l) => l.id === replaceIds[0]);
-        if (firstIdx === -1) return;
         const deleteSet = new Set(replaceIds);
+        const firstIdx = lines.findIndex((l) => deleteSet.has(l.id));
+        if (firstIdx === -1) return;
         lines = lines.filter((l) => !deleteSet.has(l.id));
         const newLines = newContentLines.map((content, i) => ({
           id: i < replaceIds.length ? replaceIds[i] : newLineIds[i],

@@ -1,26 +1,31 @@
-import { BrowserAssetStore, toAssetId } from '@openmaic/storage';
-import type { AssetMeta } from '@openmaic/dsl';
+import '@/lib/persistence/bootstrap';
+
+import type { AssetMeta, BinaryBlob } from '@openmaic/dsl';
+import {
+  registerAssetPoolStorageResetHook,
+  resolveConfiguredAssetPoolStore,
+  type AssetPoolStore,
+} from './asset-pool-config';
 import {
   expectStageRealmPresenceBinding,
   releaseStageRealmPresenceBinding,
 } from './stage-realm-presence';
-import {
-  bindAssetReplacementChannel,
-  notifyAssetReplaced,
-  observeAssetReplacements,
-} from './asset-replacement-events';
+import { bindAssetReplacementChannel, observeAssetReplacements } from './asset-replacement-events';
 
-const ASSET_POOL_DATABASE_NAME = 'maic-asset-pool';
-let pool: BrowserAssetStore | undefined;
+let pool: AssetPoolStore | undefined;
 let clearing: Promise<void> | undefined;
 
-export class AssetPoolDeletionDeferredError extends Error {
-  override readonly name = 'AssetPoolDeletionDeferredError';
+registerAssetPoolStorageResetHook(() => {
+  pool = undefined;
+  clearing = undefined;
+});
 
-  constructor() {
-    super('Asset pool deletion is deferred until other database connections close.');
-  }
-}
+export {
+  configureAssetPoolStorage,
+  isAssetPoolStorageConfigured,
+  resetAssetPoolStorageForTests,
+} from './asset-pool-config';
+export type { AssetPoolStorageOptions, AssetPoolStore } from './asset-pool-config';
 
 // Replacement notifications originate here, so registration must not depend
 // on a renderer importing the React lease module first.
@@ -54,58 +59,49 @@ if (typeof window !== 'undefined') {
     });
 }
 
-/** Lazy browser-wide asset pool. Construction is forbidden during SSR. */
-export function getAssetPool(): BrowserAssetStore {
-  if (typeof indexedDB === 'undefined') {
-    throw new Error('The browser asset pool requires IndexedDB.');
-  }
+/**
+ * Lazy browser-wide asset pool: the server-backed store the persistence
+ * bootstrap configures. There is no browser-storage backend.
+ */
+export function getAssetPool(): AssetPoolStore {
   if (clearing) throw new Error('The browser asset pool is being cleared.');
-  return (pool ??= new BrowserAssetStore({ dbName: ASSET_POOL_DATABASE_NAME }));
+  return (pool ??= (() => {
+    const configured = resolveConfiguredAssetPoolStore();
+    if (!configured) {
+      throw new Error(
+        'The asset pool is not configured: the browser persistence bootstrap configures it',
+      );
+    }
+    return configured;
+  })());
 }
 
-export function putAsset(blob: Blob, meta: AssetMeta = {}): Promise<string> {
-  return getAssetPool().put(blob, meta);
+/**
+ * Store bytes and get back the reference a document may hold.
+ *
+ * Callers go through this rather than through the pool object so URL leasing
+ * and release stay owned by `use-asset-url`, which is the only module allowed
+ * to hold a resolved URL's lifetime.
+ */
+export async function putAsset(data: BinaryBlob, meta?: AssetMeta): Promise<string> {
+  return getAssetPool().put(data, meta);
 }
 
-export async function replaceAsset(ref: string, blob: Blob, meta: AssetMeta = {}): Promise<void> {
-  const current = getAssetPool();
-  await current.replace(toAssetId(ref), blob, meta);
-  await notifyAssetReplaced(ref, current);
-}
-
-export function removeAsset(ref: string): Promise<void> {
-  return getAssetPool().remove(toAssetId(ref));
-}
-
-function deleteAssetPoolDatabase(): Promise<void> {
-  if (typeof indexedDB === 'undefined') return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(ASSET_POOL_DATABASE_NAME);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error ?? new Error('Failed to delete the asset pool.'));
-    request.onblocked = () => reject(new AssetPoolDeletionDeferredError());
-  });
-}
-
-/** Close the browser-wide singleton and delete every locally generated asset. */
+/**
+ * Close the local asset client without ever treating server assets as cache.
+ *
+ * Closing revokes every locally minted object URL. The assets themselves are
+ * durable user data on the server: calling `remove` here would destroy them in
+ * response to a local-cache action, so no remote deletion is attempted.
+ */
 export function clearAssetPool(): Promise<void> {
   if (clearing) return clearing;
   const current = pool;
   clearing = (async () => {
     try {
       if (current) await current.close();
-      await deleteAssetPoolDatabase();
-    } catch (error) {
-      // A blocked delete stays pending until every other connection closes.
-      // Keep the closed singleton installed so writes fail loudly instead of
-      // opening a connection that queues indefinitely behind that delete.
-      if (!(error instanceof AssetPoolDeletionDeferredError) && pool === current) {
-        pool = undefined;
-      }
-      throw error;
-    }
-    if (pool === current) {
-      pool = undefined;
+    } finally {
+      if (pool === current) pool = undefined;
     }
   })().finally(() => {
     clearing = undefined;
